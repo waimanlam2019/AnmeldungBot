@@ -1,6 +1,11 @@
 package me.rayentickler.bot;
 
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
 
 import javax.swing.JOptionPane;
@@ -20,6 +25,7 @@ public class AnmeldungBot {
 	private WebDriver driver;
 	private String dateRegex1;
 	private String dateRegex2;
+	private List<String> goodLocations;
 	
 	
 	public static void main(String[] args) throws InterruptedException {
@@ -44,26 +50,49 @@ public class AnmeldungBot {
 		options.addArguments("--start-maximized");
 		driver = new ChromeDriver(options);
 		
-		dateRegex1 = PropertyReader.getProperty("dateRegex1");
-		dateRegex2 = PropertyReader.getProperty("dateRegex2");
+		dateRegex1 = PropertyReader.getProperty("dateRegex1").trim();
+		dateRegex2 = PropertyReader.getProperty("dateRegex2").trim();
 		System.out.println("Date regex1: " + dateRegex1);
 		System.out.println("Date regex2: " + dateRegex2);
+		
+		String goodLocationString = PropertyReader.getProperty("goodLocation").trim();
+		goodLocations = Arrays.asList( goodLocationString.split(",") );
 	}
 	
 	public boolean checkTerminDesirable(List<String> targetLinks){
+
+		
 		for ( String link : targetLinks ) {
 			driver.get(link);
 			(new WebDriverWait(driver, 10)).until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[3]/div/div/div[3]")));
 			
 			System.out.println("Looking for the date String");
+			//Look at the Date column
 			List<WebElement> dates = driver.findElements(By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[3]/div/div/div[3]"));
-			for ( WebElement ele: dates ) {
-				System.out.println(ele.getText());
-				if ( ele.getText().matches( dateRegex1 ) || ele.getText().matches( dateRegex2 ) ) {
-				//if ( ele.getText().matches("^.+[0][0-9]\\. März 2020$") ) {
-					int input = JOptionPane.showConfirmDialog(null, "Found a slot! Date: " + ele.getText() + ". Do you like it?");
-					if ( input == 0 ) {
-						return true;
+			for ( WebElement date: dates ) {
+				System.out.println(date.getText());
+				if ( date.getText().matches( dateRegex1 ) || date.getText().matches( dateRegex2 ) ) {
+				//if ( date.getText().matches("^.+[0][0-9]\\. März 2020$") ) {
+					
+					//Look at the timetable
+					List<WebElement> burgerAmts = driver.findElements(By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[5]/div[2]"));
+					for ( WebElement burgerAmt : burgerAmts ) {
+						System.out.println(burgerAmt.getText());
+						String message = "<html><body>Found a slot! Date: " + date.getText() + ".<br/>";
+						boolean foundGoodLocation = false;
+						for ( String goodLocation: goodLocations ) {
+							if ( burgerAmt.getText().contains(goodLocation) || burgerAmt.getText().contains(goodLocation.toLowerCase()) ) {
+								message += goodLocation + "<br/>";
+								foundGoodLocation = true;
+							}
+						}
+						message += "</body></html>";
+						if ( foundGoodLocation ) {
+							int input = JOptionPane.showConfirmDialog(null, message);
+							if ( input == 0 ) {
+								return true;
+							}
+						}
 					}
 				}
 			}
@@ -75,6 +104,7 @@ public class AnmeldungBot {
 		
 		System.out.println("===========================================================================");
 		System.out.println("===========================================================================");
+		System.out.println(LocalDateTime.now());
 		System.out.println("Clicking the start link.");
 		driver.get(startLink);
 		
@@ -97,7 +127,6 @@ public class AnmeldungBot {
 				String href = link.getAttribute("href");
 				//Omit the link which leads to the next calender months
 				if ( !href.equals(nextPageLink) ) {
-					System.out.println("Found a slot!");
 					System.out.println(href);
 					targetLinks.add(href);
 				}
