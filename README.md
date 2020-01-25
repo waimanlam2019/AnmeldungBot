@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 
@@ -1174,3 +1175,7 @@
   </body>
 </html>
 
+=======
+# AnmeldungBot
+A bot to search for desirable anmeldung appointment slot in Berlin
+>>>>>>> ec3355d109360ac4c443f314c591d749497a946e
