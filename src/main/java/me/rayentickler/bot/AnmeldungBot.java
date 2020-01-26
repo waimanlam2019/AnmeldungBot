@@ -26,27 +26,13 @@ public class AnmeldungBot {
 	private String dateRegex2;
 	private List<String> goodLocations;
 
-	public static void main(String[] args) throws InterruptedException {
-		AnmeldungBot bot = new AnmeldungBot();
-		while (!bot.finished) {
-			List<String> targetLinks = bot.lookForTermin();
-			if (targetLinks.size() != 0) {
-				// Check for the validity of the anmeldung date
-				bot.finished = bot.checkTerminDesirable(targetLinks);
-			} else {
-				System.out.println("Cannot find a valid termin.");
-			}
-			System.out.println("Sleep for 1 minute..");
-			Thread.sleep(60000);
-		}
-	}
-
 	public AnmeldungBot() {
 		System.out.println("Starting the chrome driver.");
 		System.setProperty("webdriver.chrome.driver", "/home/raylam/Downloads/chromedriver");
 
 		ChromeOptions options = new ChromeOptions();
-		options.addArguments("user-agent=\"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)\"");
+		options.addArguments(
+				"--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.117 Safari/537.36");
 		options.addArguments("--start-maximized");
 		driver = new ChromeDriver(options);
 
@@ -63,62 +49,72 @@ public class AnmeldungBot {
 		goodLocations = Arrays.asList(goodLocationString.split(","));
 	}
 
-	public boolean checkTerminDesirable(List<String> targetLinks) {
+	public static void main(String[] args) throws InterruptedException {
+		AnmeldungBot bot = new AnmeldungBot();
+		while (!bot.finished) {
+			List<Termin> terminList = bot.lookForTermin();
+			if (terminList.size() != 0) {
+				// Check for the validity of the anmeldung date
+				bot.finished = bot.checkTerminLocationGood(terminList);
+			} else {
+				System.out.println("Cannot find a valid termin.");
+			}
+			System.out.println("Sleep for 1 minute..");
+			Thread.sleep(60000);
+		}
+	}
 
-		// An TimeoutException would be throw when the website gives up CAPTCHA. In this
-		// case just repeat.
-		while (true) {
-			try {
-				for (String link : targetLinks) {
+	public boolean checkTerminLocationGood(List<Termin> terminList) throws InterruptedException {
 
-					driver.get(link);
-					(new WebDriverWait(driver, 10)).until(ExpectedConditions.presenceOfElementLocated(
-							By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[3]/div/div/div[3]")));
+		/*
+		 * An TimeoutException would be throw when the website gives up CAPTCHA. In this
+		 * case just give up and alert the user.
+		 * 
+		 * The CAPTCHA appear quite often because of unknown reason, now there is no way
+		 * to mitigate this. A courtesy of 10 seconds wait was added.
+		 * 
+		 * Changing VPN location might work.
+		 * 
+		 */
+		try {
+			for (Termin termin : terminList) {
+				driver.get(termin.getHref());
+				// Wait for the timetable's title to appear
+				(new WebDriverWait(driver, 10)).until(ExpectedConditions.presenceOfElementLocated(
+						By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[5]/div[1]/h2")));
 
-					System.out.println("Looking for the date String");
-					// Look at the Date column
-					List<WebElement> dates = driver.findElements(
-							By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[3]/div/div/div[3]"));
-					for (WebElement date : dates) {
-						System.out.println(date.getText());
-						if (date.getText().matches(dateRegex1) || date.getText().matches(dateRegex2)) {
-							// if ( date.getText().matches("^.+[0][0-9]\\. März 2020$") ) {
-
-							// Look at the timetable for burgeramt location
-							List<WebElement> burgerAmts = driver.findElements(
-									By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[5]/div[2]"));
-							for (WebElement burgerAmt : burgerAmts) {
-								System.out.println(burgerAmt.getText());
-								String message = "<html><body>Found a slot! Date: " + date.getText() + ".<br/>";
-								boolean foundGoodLocation = false;
-								for (String goodLocation : goodLocations) {
-									if (burgerAmt.getText().contains(goodLocation)
-											|| burgerAmt.getText().contains(goodLocation.toLowerCase())) {
-										message += goodLocation + "<br/>";
-										foundGoodLocation = true;
-									}
-								}
-								message += "</body></html>";
-								if (foundGoodLocation) {
-									int input = JOptionPane.showConfirmDialog(null, message);
-									if (input == 0) {
-										return true;
-									}
-								}
-							}
+				// Look at the timetable for burgeramt location
+				List<WebElement> burgerAmts = driver.findElements(By.className("timetable"));
+				for (WebElement burgerAmt : burgerAmts) {
+					System.out.println(burgerAmt.getText());
+					String message = "<html><body>Found a slot! Date: " + termin.getDate() + ".<br/>";
+					boolean foundGoodLocation = false;
+					for (String goodLocation : goodLocations) {
+						if (burgerAmt.getText().contains(goodLocation)) {
+							message += goodLocation + "<br/>";
+							foundGoodLocation = true;
 						}
 					}
+					message += "</body></html>";
 
+					if (foundGoodLocation) {
+						// Ask user if it is good enough
+						int input = JOptionPane.showConfirmDialog(null, message);
+						if (input == 0) {
+							return true;
+						}
+					}
 				}
-			} catch (TimeoutException ex) {
-				System.err.println(ex.getMessage());
+				Thread.sleep(3000);
 			}
-			break;
+		} catch (TimeoutException ex) {
+			System.out.println(ex);
+			JOptionPane.showMessageDialog(null, "There is some problem with the Bot");
 		}
 		return false;
 	}
 
-	public List<String> lookForTermin() throws InterruptedException {
+	public List<Termin> lookForTermin() throws InterruptedException {
 
 		System.out.println("===========================================================================");
 		System.out.println("===========================================================================");
@@ -133,27 +129,52 @@ public class AnmeldungBot {
 		// Load next month
 		if (goToNextMonth) {
 			driver.get(nextPageLink);
-			(new WebDriverWait(driver, 10))
-					.until(ExpectedConditions.presenceOfElementLocated(By.className("calendar-month-table")));
+			(new WebDriverWait(driver, 10)).until(ExpectedConditions.presenceOfElementLocated(
+					By.xpath("//*[@id=\"top\"]/div/div/div/div[4]/div[2]/div/div/div[4]/div")));
 		}
 
 		List<WebElement> calenders = driver.findElements(By.className("calendar-month-table"));
 		System.out.println("Found the calender.");
 
-		List<String> targetLinks = new ArrayList<>();
+		List<Termin> terminList = new ArrayList<>();
 		// There are two calenders in the start page
-		for (WebElement ele : calenders) {
+		for (int i = 0; i < calenders.size(); i++) {
+			WebElement ele = calenders.get(i);
+
 			System.out.println("Looking for termin link in the calender..");
 			List<WebElement> links = ele.findElements(By.tagName("a"));
+			WebElement month;
+
+			month = ele.findElement(By.className("month"));
+
 			for (WebElement link : links) {
 				String href = link.getAttribute("href");
 				// Omit the link which leads to the next calender months
 				if (!href.equals(nextPageLink)) {
 					System.out.println(href);
-					targetLinks.add(href);
+					String date = checkTerminDateGood(link, month);
+					if (!"BAD".equals(date)) {
+						Termin termin = new Termin(date, href);
+						terminList.add(termin);
+					}
+
 				}
 			}
 		}
-		return targetLinks;
+		return terminList;
+	}
+
+	public String checkTerminDateGood(WebElement link, WebElement month) {
+		String monthYear = month.getText();
+		String date = link.getText();
+		String completeDate = date + "-" + monthYear;
+		completeDate = completeDate.replace(" ", "-");
+		System.out.println(completeDate);
+
+		if (completeDate.matches(dateRegex1) || completeDate.matches(dateRegex2)) {
+			return completeDate;
+		}
+
+		return "BAD";
 	}
 }
